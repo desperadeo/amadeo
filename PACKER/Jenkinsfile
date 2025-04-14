@@ -1,0 +1,63 @@
+pipeline {
+  agent any
+
+  environment {
+    PACKER_CACHE_DIR = "${WORKSPACE}/.packer.d"
+    PACKER_LOG = "1"
+    PACKER_LOG_PATH = "${WORKSPACE}/packer.log"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        // Utilisation du credential GitHub Enterprise
+        git branch: 'main', credentialsId: 'github-enterprise-creds', url: 'https://github.unil.ch/ci-dcsr/packer-vsphere-templates.git'
+      }
+    }
+
+    stage('Init Packer') {
+      steps {
+        dir('windows/server-2022') {
+          sh 'packer init .'
+        }
+      }
+    }
+   
+    stage('Validate Packer config') {
+      steps {
+          sh '''
+          packer validate -var-file=variables/common.pkrvars.hcl \
+                          -var-file=variables/vsphere.pkrvars.hcl \
+                          windows/server-2022/
+          '''
+      }
+    }
+
+    stage('Build template') {
+      steps {
+          sh '''
+          packer build -var-file=variables/common.pkrvars.hcl \
+                       -var-file=variables/vsphere.pkrvars.hcl \
+                       windows/server-2022/
+          '''
+      }
+    }
+
+    stage('Archive logs') {
+      steps {
+        archiveArtifacts artifacts: 'packer.log', fingerprint: true
+      }
+    }
+
+  }
+
+  post {
+    success {
+      echo '🎉 Packer template build succeeded!'
+    }
+    failure {
+      echo '🚨 Build failed — check packer.log for details.'
+    }
+  }
+}
